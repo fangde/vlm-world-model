@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>为什么我不太相信 VLM，也不太相信世界模型</title>
+<meta name="description" content="VLM 很有用，但它的作用应该停在 perception → understanding → planning。把视觉、力觉、触觉、本体感觉都塞进一个模型再输出关节动作，混淆了两个不同的 optimization problem：视觉负责目标，手负责动力学。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="为什么我不太相信 VLM，也不太相信世界模型">
+<meta property="og:description" content="VLM 很有用，但它的作用应该停在 perception → understanding → planning。把视觉、力觉、触觉、本体感觉都塞进一个模型再输出关节动作，混淆了两个不同的 optimization problem：视觉负责目标，手负责动力学。">
+<meta property="og:image" content="https://fangde.github.io/vlm-world-model/images/cover.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<style>
+  :root { --ink: #0b1530; --acc: #2e5bff; --mark: #fff18a; --soft: #eef2ff;
+           --sub: #5a6577; --line: #e7ecf9; --bg: #f6f8ff; }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; background: var(--bg); color: #242832;
+    font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', 'PingFang SC',
+                 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif; }
+  .wrap { max-width: 780px; margin: 0 auto; padding: 44px 18px 80px; }
+  .hero { padding: 4px 6px 26px; }
+  .kicker { font-size: 12.5px; letter-spacing: 2px; color: var(--acc); font-weight: 800;
+    text-transform: uppercase; margin: 0 0 16px; display: flex; gap: 10px; align-items: center; }
+  .kicker::before { content: ""; width: 26px; height: 3px; background: var(--acc); }
+  h1 { font-size: clamp(24px, 5vw, 37px); line-height: 1.3; margin: 0 0 14px;
+    letter-spacing: -0.01em; font-weight: 800; color: var(--ink); }
+  .sub { font-size: clamp(14px, 2.6vw, 16.5px); color: #44506e; line-height: 1.7; margin: 0;
+    padding-left: 14px; border-left: 3px solid var(--acc); }
+  .card { background: #fff; border-radius: 8px; overflow: hidden; margin-top: 26px;
+    box-shadow: 0 8px 30px rgba(11,21,48,.08); }
+  .foot { margin-top: 34px; padding: 22px 6px 0; border-top: 1px solid var(--line);
+    color: var(--sub); font-size: 13px; line-height: 1.9; }
+  .foot b { color: var(--ink); font-weight: 600; }
+  @media print { .card { box-shadow: none; } }
+  @media (max-width: 520px) { .wrap { padding: 26px 12px 60px; } }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="hero">
+      <p class="kicker">刷屏AI · 2026-10-11</p>
+      <h1>为什么我不太相信 VLM，也不太相信世界模型</h1>
+      <p class="sub">力，不应该是视觉系统的事情</p>
+    </header>
+    <main class="card">
+<section style="font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif; font-size: 15.5px; color: #242832; line-height: 1.8; letter-spacing: 0.35px; word-spacing: 1.5px; padding: 20px 22px; background: #ffffff;">
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">我一直对现在机器人领域一个很流行的方向有点怀疑：把视觉、语言、力觉、触觉、本体感觉都送进一个越来越大的模型，然后让这个模型直接输出每个关节的动作。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">我怀疑的不是 VLM 有没有用。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">恰恰相反，我认为 VLM 很有用。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">只是它的作用，也许应该停在：</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;"><em style="font-style: italic; color: #5a6577;">perception → understanding → planning.</em></p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">到了 planning，就够了。</p>
+<p style="text-align: center; color: #c7d2fe; letter-spacing: 14px; font-size: 11px; margin: 36px 0; user-select: none;">● ● ●</p>
+<h2 style="font-size: 18px; font-weight: 700; color: #0b1530; margin: 40px 0 18px; padding: 10px 16px 10px 14px; border-left: 4px solid #2e5bff; background: linear-gradient(90deg, #eef2ff 0%, #ffffff 70%); border-radius: 0 6px 6px 0; line-height: 1.5; letter-spacing: 0.3px;">一个最简单的例子：拿镊子夹一个小东西</h2>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">假设一个人手里已经拿着一把镊子，现在要去夹一个很小的目标。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">这个动作看起来简单，但其实里面至少有两个完全不同的控制问题。</p>
+<p style="text-align:center;margin:16px 0;"><img src="images/01.jpg" alt="" style="max-width: 100%; height: auto; border-radius: 8px; margin: 22px auto; display: block; box-shadow: 0 6px 20px rgba(11,21,48,0.08); border: 1px solid #eef2ff;"/></p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">第一个问题是：</p>
+<blockquote style="margin: 24px 0; padding: 18px 22px; background: #f4f6fc; border-left: 3px solid #2e5bff; color: #3a4463; font-size: 14.5px; border-radius: 0 10px 10px 0; line-height: 1.85; letter-spacing: 0.3px;">镊子在哪里？目标在哪里？两者还差多少？</blockquote>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">这个问题视觉最擅长。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">眼睛可以看到目标，也可以看到镊子尖。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">它可以判断：</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">向前一点。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">向后一点。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">向左一点。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">再靠近一点。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">现在可以夹。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">如果目标在移动，它还可以不断修正：</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">目标向右移动了。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">镊子还差 3 mm。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">应该提前一点过去。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">从这个意义上说，VLM 非常有价值。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">它可以负责：</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">识别目标。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">理解任务。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">判断工具与目标的位置关系。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">观察别人是怎么完成这个任务的。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">决定下一步大概应该向哪里运动。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">它解决的主要是：</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;"><em style="font-style: italic; color: #5a6577;">tool ↔ target.</em></p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">可以把它的目标近似写成：</p>
+<p style="text-align:center;margin:16px 0;"><img src="images/10.png" alt="" style="max-width: 100%; height: auto; margin: 20px auto; display: block; border: none; box-shadow: none;"/></p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">也就是说：</p>
+<blockquote style="margin: 24px 0; padding: 18px 22px; background: #f4f6fc; border-left: 3px solid #2e5bff; color: #3a4463; font-size: 14.5px; border-radius: 0 10px 10px 0; line-height: 1.85; letter-spacing: 0.3px;">把工具送到正确的位置。</blockquote>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">到这里，我完全相信 VLM。</p>
+<p style="text-align: center; color: #c7d2fe; letter-spacing: 14px; font-size: 11px; margin: 36px 0; user-select: none;">● ● ●</p>
+<h2 style="font-size: 18px; font-weight: 700; color: #0b1530; margin: 40px 0 18px; padding: 10px 16px 10px 14px; border-left: 4px solid #2e5bff; background: linear-gradient(90deg, #eef2ff 0%, #ffffff 70%); border-radius: 0 6px 6px 0; line-height: 1.5; letter-spacing: 0.3px;">但是，真正拿镊子的手在解决另一个问题</h2>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">当手真正拿着镊子时，还有完全不同的一组问题。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">镊子在手里稳不稳？</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">有没有开始打滑？</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">手指的夹持力够不够？</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">镊子会不会从手里掉下来？</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">当镊子夹住物体以后，还要知道：</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">物体有没有在镊子尖之间滑动？</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">是不是快要掉下来？</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">夹持力是不是太小？</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">是不是又夹得太紧？</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">这些问题，视觉并不擅长。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">视觉当然可以在一个物体已经明显发生相对运动以后看到：</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">“它滑了。”</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">但是视觉看不到真正的 friction。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">它不能直接感受到 contact force。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">它也很难直接知道：</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">当前这个 grasp 到底稳定不稳定。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">距离 slip boundary 还有多远。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">再增加多少外力就会失稳。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">这些事情，手反而知道得更直接。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">因为手依靠的是：</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">force。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">touch。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">proprioception。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">joint state。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">contact information。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">所以它解决的是另外一个关系：</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;"><em style="font-style: italic; color: #5a6577;">hand ↔ tool ↔ object.</em></p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">视觉主要知道：</p>
+<blockquote style="margin: 24px 0; padding: 18px 22px; background: #f4f6fc; border-left: 3px solid #2e5bff; color: #3a4463; font-size: 14.5px; border-radius: 0 10px 10px 0; line-height: 1.85; letter-spacing: 0.3px;">工具和外部目标之间是什么关系。</blockquote>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">手主要知道：</p>
+<blockquote style="margin: 24px 0; padding: 18px 22px; background: #f4f6fc; border-left: 3px solid #2e5bff; color: #3a4463; font-size: 14.5px; border-radius: 0 10px 10px 0; line-height: 1.85; letter-spacing: 0.3px;">身体、工具和被夹物体之间的物理关系是否稳定。</blockquote>
+<p style="text-align: center; color: #c7d2fe; letter-spacing: 14px; font-size: 11px; margin: 36px 0; user-select: none;">● ● ●</p>
+<h2 style="font-size: 18px; font-weight: 700; color: #0b1530; margin: 40px 0 18px; padding: 10px 16px 10px 14px; border-left: 4px solid #2e5bff; background: linear-gradient(90deg, #eef2ff 0%, #ffffff 70%); border-radius: 0 6px 6px 0; line-height: 1.5; letter-spacing: 0.3px;">但底层系统不只是“拿稳”</h2>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">如果只是说手的任务是“拿稳镊子”，还不够。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">因为真正执行动作的时候，手还必须让镊子按照要求运动。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">比如高层告诉它：</p>
+<blockquote style="margin: 24px 0; padding: 18px 22px; background: #f4f6fc; border-left: 3px solid #2e5bff; color: #3a4463; font-size: 14.5px; border-radius: 0 10px 10px 0; line-height: 1.85; letter-spacing: 0.3px;">向前移动 5 mm。</blockquote>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">但底层真正需要解决的是：</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">怎么移动这 5 mm？</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">多快到达？</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">加速度多大？</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">什么时候开始减速？</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">运动过程中怎样继续保持 grip？</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">所以底层需要控制的不只是：</p>
+<p style="text-align:center;margin:16px 0;"><img src="images/03.png" alt="" style="max-width: 100%; height: auto; margin: 20px auto; display: block; border: none; box-shadow: none;"/></p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">还有：</p>
+<p style="text-align:center;margin:16px 0;"><img src="images/04.png" alt="" style="max-width: 100%; height: auto; margin: 20px auto; display: block; border: none; box-shadow: none;"/></p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">以及：</p>
+<p style="text-align:center;margin:16px 0;"><img src="images/05.png" alt="" style="max-width: 100%; height: auto; margin: 20px auto; display: block; border: none; box-shadow: none;"/></p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">也就是：</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">位置、速度和加速度。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">而速度和加速度最终都和 force / torque 联系在一起。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">最简单地说：</p>
+<p style="text-align:center;margin:16px 0;"><img src="images/06.png" alt="" style="max-width: 100%; height: auto; margin: 20px auto; display: block; border: none; box-shadow: none;"/></p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">对于真正的手和机器人来说，更接近：</p>
+<p style="text-align:center;margin:16px 0;"><img src="images/07.png" alt="" style="max-width: 100%; height: auto; margin: 20px auto; display: block; border: none; box-shadow: none;"/></p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">也就是说：</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">如果想让镊子按照某个速度和加速度运动，底层必须产生相应的 joint torque 和 contact force。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">所以 Body Intelligence 实际上同时完成两个目标。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">一个是：</p>
+<p style="text-align:center;margin:16px 0;"><img src="images/08.png" alt="" style="max-width: 100%; height: auto; margin: 20px auto; display: block; border: none; box-shadow: none;"/></p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">包括：</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">到达指定位置。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">达到要求的速度。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">产生合适的加速度。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">按时完成动作。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">保证运动平滑。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">另一个是：</p>
+<p style="text-align:center;margin:16px 0;"><img src="images/09.png" alt="" style="max-width: 100%; height: auto; margin: 20px auto; display: block; border: none; box-shadow: none;"/></p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">包括：</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">镊子不从手里滑。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">工具不掉。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">被夹住的物体不滑落。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">contact 保持稳定。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">遇到 disturbance 时快速恢复。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">所以它绝不是一个简单的“防滑 controller”。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">它负责的是整个 <strong style="color: #0b1530; font-weight: 800; background: linear-gradient(180deg, transparent 62%, #fff18a 62%, #fff18a 95%, transparent 95%); padding: 1px 6px;">physical execution</strong>。</p>
+<p style="text-align: center; color: #c7d2fe; letter-spacing: 14px; font-size: 11px; margin: 36px 0; user-select: none;">● ● ●</p>
+<h2 style="font-size: 18px; font-weight: 700; color: #0b1530; margin: 40px 0 18px; padding: 10px 16px 10px 14px; border-left: 4px solid #2e5bff; background: linear-gradient(90deg, #eef2ff 0%, #ffffff 70%); border-radius: 0 6px 6px 0; line-height: 1.5; letter-spacing: 0.3px;">两个系统的 Objective 根本不同</h2>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">这才是这个例子最重要的地方。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">两个系统不仅使用不同的 sensor。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">它们连优化目标都不同。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">视觉系统更关心的是：</p>
+<p style="text-align:center;margin:16px 0;"><img src="images/10.png" alt="" style="max-width: 100%; height: auto; margin: 20px auto; display: block; border: none; box-shadow: none;"/></p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">也就是：</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;"><strong style="color: #0b1530; font-weight: 800; background: linear-gradient(180deg, transparent 62%, #fff18a 62%, #fff18a 95%, transparent 95%); padding: 1px 6px;">tool–target error 要尽量小。</strong></p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">而 Body Intelligence 更关心的是：</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;"><em style="font-style: italic; color: #5a6577;">track desired motion</em></p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">同时：</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;"><em style="font-style: italic; color: #5a6577;">maintain stable grasp/contact.</em></p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">也就是说，它需要：</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">按照给定的速度和加速度运动，</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">同时保持工具和物体不滑、不掉、不失稳。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">所以这并不是：</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;"><strong style="color: #0b1530; font-weight: 800; background: linear-gradient(180deg, transparent 62%, #fff18a 62%, #fff18a 95%, transparent 95%); padding: 1px 6px;">两套 sensor 去解决同一个问题。</strong></p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">而是：</p>
+<blockquote style="margin: 24px 0; padding: 18px 22px; background: #f4f6fc; border-left: 3px solid #2e5bff; color: #3a4463; font-size: 14.5px; border-radius: 0 10px 10px 0; line-height: 1.85; letter-spacing: 0.3px;">两个 intelligence 在解决两个不同的 optimization problem。</blockquote>
+<p style="text-align:center;margin:16px 0;"><img src="images/11.jpg" alt="" style="max-width: 100%; height: auto; border-radius: 8px; margin: 22px auto; display: block; box-shadow: 0 6px 20px rgba(11,21,48,0.08); border: 1px solid #eef2ff;"/></p>
+<p style="text-align: center; color: #c7d2fe; letter-spacing: 14px; font-size: 11px; margin: 36px 0; user-select: none;">● ● ●</p>
+<h2 style="font-size: 18px; font-weight: 700; color: #0b1530; margin: 40px 0 18px; padding: 10px 16px 10px 14px; border-left: 4px solid #2e5bff; background: linear-gradient(90deg, #eef2ff 0%, #ffffff 70%); border-radius: 0 6px 6px 0; line-height: 1.5; letter-spacing: 0.3px;">我真正不相信的，是 One Model Architecture</h2>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">因此，我不太相信的一种默认 architecture 是：</p>
+<p style="text-align:center;margin:16px 0;"><img src="images/12.png" alt="" style="max-width: 100%; height: auto; margin: 20px auto; display: block; border: none; box-shadow: none;"/></p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">也就是：</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">把所有 sensing 都融合起来，</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">送进一个统一模型，</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">然后由这个模型直接决定每个关节应该怎样动。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">不是说这种方法一定做不到。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">它当然可能做出来。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">但我真正的问题是：</p>
+<blockquote style="margin: 24px 0; padding: 18px 22px; background: #f4f6fc; border-left: 3px solid #2e5bff; color: #3a4463; font-size: 14.5px; border-radius: 0 10px 10px 0; line-height: 1.85; letter-spacing: 0.3px;"><strong style="color: #0b1530; font-weight: 800; background: linear-gradient(180deg, transparent 62%, #fff18a 62%, #fff18a 95%, transparent 95%); padding: 1px 6px;">为什么一定要这样做？</strong></blockquote>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">如果不同 sensing 面对的是不同 information structure，</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">不同系统有不同 objective，</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">甚至有不同 bandwidth 和 latency，</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">为什么一定要强迫它们变成一个 model？</p>
+<p style="text-align:center;margin:16px 0;"><img src="images/13.jpg" alt="" style="max-width: 100%; height: auto; border-radius: 8px; margin: 22px auto; display: block; box-shadow: 0 6px 20px rgba(11,21,48,0.08); border: 1px solid #eef2ff;"/></p>
+<p style="text-align: center; color: #c7d2fe; letter-spacing: 14px; font-size: 11px; margin: 36px 0; user-select: none;">● ● ●</p>
+<h2 style="font-size: 18px; font-weight: 700; color: #0b1530; margin: 40px 0 18px; padding: 10px 16px 10px 14px; border-left: 4px solid #2e5bff; background: linear-gradient(90deg, #eef2ff 0%, #ffffff 70%); border-radius: 0 6px 6px 0; line-height: 1.5; letter-spacing: 0.3px;">我更相信两个模型</h2>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">对于这个镊子任务，我更相信一个非常简单的结构。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">第一个模型是：</p>
+<p style="text-align:center;margin:16px 0;"><img src="images/14.png" alt="" style="max-width: 100%; height: auto; margin: 20px auto; display: block; border: none; box-shadow: none;"/></p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">它主要依赖 vision。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">它负责：</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">目标在哪里？</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">工具在哪里？</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">两者还差多少？</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">目标是否在移动？</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">接下来应该往哪里去？</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">什么时候应该开始夹？</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">它可以输出：</p>
+<blockquote style="margin: 24px 0; padding: 18px 22px; background: #f4f6fc; border-left: 3px solid #2e5bff; color: #3a4463; font-size: 14.5px; border-radius: 0 10px 10px 0; line-height: 1.85; letter-spacing: 0.3px;">向前 3 mm。</blockquote>
+<blockquote style="margin: 24px 0; padding: 18px 22px; background: #f4f6fc; border-left: 3px solid #2e5bff; color: #3a4463; font-size: 14.5px; border-radius: 0 10px 10px 0; line-height: 1.85; letter-spacing: 0.3px;">向右 1 mm。</blockquote>
+<blockquote style="margin: 24px 0; padding: 18px 22px; background: #f4f6fc; border-left: 3px solid #2e5bff; color: #3a4463; font-size: 14.5px; border-radius: 0 10px 10px 0; line-height: 1.85; letter-spacing: 0.3px;">目标移动了，修改目标位置。</blockquote>
+<blockquote style="margin: 24px 0; padding: 18px 22px; background: #f4f6fc; border-left: 3px solid #2e5bff; color: #3a4463; font-size: 14.5px; border-radius: 0 10px 10px 0; line-height: 1.85; letter-spacing: 0.3px;">在 200 ms 内到达这里。</blockquote>
+<blockquote style="margin: 24px 0; padding: 18px 22px; background: #f4f6fc; border-left: 3px solid #2e5bff; color: #3a4463; font-size: 14.5px; border-radius: 0 10px 10px 0; line-height: 1.85; letter-spacing: 0.3px;">然后闭合镊子。</blockquote>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">它负责：</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;"><em style="font-style: italic; color: #5a6577;">where to go</em></p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">以及大致的：</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;"><em style="font-style: italic; color: #5a6577;">when to get there.</em></p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">第二个模型是：</p>
+<p style="text-align:center;margin:16px 0;"><img src="images/15.png" alt="" style="max-width: 100%; height: auto; margin: 20px auto; display: block; border: none; box-shadow: none;"/></p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">它主要依靠：</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">force。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">touch。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">proprioception。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">joint state。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">它负责：</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">如何真正产生这个运动？</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">需要多大的 joint torque？</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">怎样满足要求的 velocity 和 acceleration？</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">怎样在运动过程中继续把镊子拿稳？</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">怎样防止镊子在手里 slip？</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">怎样让夹住的物体不掉下来？</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">contact 变化以后怎样立即调整？</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">所以它负责的是：</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;"><em style="font-style: italic; color: #5a6577;">how to physically execute it.</em></p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">一句话：</p>
+<blockquote style="margin: 24px 0; padding: 18px 22px; background: #f4f6fc; border-left: 3px solid #2e5bff; color: #3a4463; font-size: 14.5px; border-radius: 0 10px 10px 0; line-height: 1.85; letter-spacing: 0.3px;"><strong style="color: #0b1530; font-weight: 800; background: linear-gradient(180deg, transparent 62%, #fff18a 62%, #fff18a 95%, transparent 95%); padding: 1px 6px;">World Intelligence decides where to go and roughly when to arrive. Body Intelligence generates the forces required to get there while maintaining stability.</strong></blockquote>
+<p style="text-align: center; color: #c7d2fe; letter-spacing: 14px; font-size: 11px; margin: 36px 0; user-select: none;">● ● ●</p>
+<h2 style="font-size: 18px; font-weight: 700; color: #0b1530; margin: 40px 0 18px; padding: 10px 16px 10px 14px; border-left: 4px solid #2e5bff; background: linear-gradient(90deg, #eef2ff 0%, #ffffff 70%); border-radius: 0 6px 6px 0; line-height: 1.5; letter-spacing: 0.3px;">VLM 到 Planning 就够了</h2>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">所以我并不反对 VLM。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">相反，我认为 VLM 已经非常适合做：</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">看。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">理解。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">判断。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">规划。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">它可以看到：</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">目标在哪里。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">工具在哪里。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">别人怎么做。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">下一步应该做什么。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">这已经非常重要。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">但它完全可以在这里停下来。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">它没有必要继续向下吞掉：</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">force control。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">contact control。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">slip control。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">joint torque control。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">VLM 可以说：</p>
+<blockquote style="margin: 24px 0; padding: 18px 22px; background: #f4f6fc; border-left: 3px solid #2e5bff; color: #3a4463; font-size: 14.5px; border-radius: 0 10px 10px 0; line-height: 1.85; letter-spacing: 0.3px;">向前移动 5 mm，在 200 ms 内到达。</blockquote>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">但真正的问题：</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">拇指需要增加多少力？</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">食指怎样配合？</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">当前 contact force 是否足够？</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">运动过程中要怎样改变 torque？</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">这些应该属于 Body Intelligence。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">所以我更愿意说：</p>
+<blockquote style="margin: 24px 0; padding: 18px 22px; background: #f4f6fc; border-left: 3px solid #2e5bff; color: #3a4463; font-size: 14.5px; border-radius: 0 10px 10px 0; line-height: 1.85; letter-spacing: 0.3px;"><strong style="color: #0b1530; font-weight: 800; background: linear-gradient(180deg, transparent 62%, #fff18a 62%, #fff18a 95%, transparent 95%); padding: 1px 6px;">VLM should plan the motion, not own the force.</strong></blockquote>
+<p style="text-align: center; color: #c7d2fe; letter-spacing: 14px; font-size: 11px; margin: 36px 0; user-select: none;">● ● ●</p>
+<h2 style="font-size: 18px; font-weight: 700; color: #0b1530; margin: 40px 0 18px; padding: 10px 16px 10px 14px; border-left: 4px solid #2e5bff; background: linear-gradient(90deg, #eef2ff 0%, #ffffff 70%); border-radius: 0 6px 6px 0; line-height: 1.5; letter-spacing: 0.3px;">World Model 也一样</h2>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">World Model 比 VLM 再进一步。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">VLM 更多是在理解现在。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">World Model 还可以预测未来。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">比如：</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">这个目标正在往右运动。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">300 ms 以后它会到这里。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">如果镊子继续直线走，会错过它。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">应该提前改变 interception point。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">这当然非常有用。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">World Model 可以让 planning 更聪明。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">但是这仍然主要是在解决：</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;"><em style="font-style: italic; color: #5a6577;">world prediction.</em></p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">也就是：</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">世界接下来会发生什么？</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">我应该把工具送到哪里？</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">但是，当镊子真正碰到目标时，</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">真正发生：</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">contact。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">friction。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">slip。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">force redistribution。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">这些问题的时候，</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">world model 并不能代替底层的 force controller。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">它可以预测：</p>
+<blockquote style="margin: 24px 0; padding: 18px 22px; background: #f4f6fc; border-left: 3px solid #2e5bff; color: #3a4463; font-size: 14.5px; border-radius: 0 10px 10px 0; line-height: 1.85; letter-spacing: 0.3px;">这个 grasp 可能不稳定。</blockquote>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">但是一旦 slip 真正开始，</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">真正需要立即作出反应的，还是 Body Intelligence。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">所以：</p>
+<blockquote style="margin: 24px 0; padding: 18px 22px; background: #f4f6fc; border-left: 3px solid #2e5bff; color: #3a4463; font-size: 14.5px; border-radius: 0 10px 10px 0; line-height: 1.85; letter-spacing: 0.3px;"><strong style="color: #0b1530; font-weight: 800; background: linear-gradient(180deg, transparent 62%, #fff18a 62%, #fff18a 95%, transparent 95%); padding: 1px 6px;">A better World Model improves planning, but it does not replace force control.</strong></blockquote>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">甚至可以说：</p>
+<blockquote style="margin: 24px 0; padding: 18px 22px; background: #f4f6fc; border-left: 3px solid #2e5bff; color: #3a4463; font-size: 14.5px; border-radius: 0 10px 10px 0; line-height: 1.85; letter-spacing: 0.3px;"><strong style="color: #0b1530; font-weight: 800; background: linear-gradient(180deg, transparent 62%, #fff18a 62%, #fff18a 95%, transparent 95%); padding: 1px 6px;">A better brain does not eliminate the need for a spinal cord.</strong></blockquote>
+<p style="text-align: center; color: #c7d2fe; letter-spacing: 14px; font-size: 11px; margin: 36px 0; user-select: none;">● ● ●</p>
+<h2 style="font-size: 18px; font-weight: 700; color: #0b1530; margin: 40px 0 18px; padding: 10px 16px 10px 14px; border-left: 4px solid #2e5bff; background: linear-gradient(90deg, #eef2ff 0%, #ffffff 70%); border-radius: 0 6px 6px 0; line-height: 1.5; letter-spacing: 0.3px;">为什么这个例子让我相信 Society of Agents</h2>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">这个镊子任务让我越来越觉得：</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">我们理解 intelligence 的核心，也许不是问：</p>
+<blockquote style="margin: 24px 0; padding: 18px 22px; background: #f4f6fc; border-left: 3px solid #2e5bff; color: #3a4463; font-size: 14.5px; border-radius: 0 10px 10px 0; line-height: 1.85; letter-spacing: 0.3px;">怎样把所有信息融合到一个 model 里？</blockquote>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">而应该先问：</p>
+<blockquote style="margin: 24px 0; padding: 18px 22px; background: #f4f6fc; border-left: 3px solid #2e5bff; color: #3a4463; font-size: 14.5px; border-radius: 0 10px 10px 0; line-height: 1.85; letter-spacing: 0.3px;"><strong style="color: #0b1530; font-weight: 800; background: linear-gradient(180deg, transparent 62%, #fff18a 62%, #fff18a 95%, transparent 95%); padding: 1px 6px;">不同 intelligence 到底在完成什么功能？</strong></blockquote>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">视觉系统主要解决：</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;"><em style="font-style: italic; color: #5a6577;">tool ↔ target.</em></p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">Body Intelligence 主要解决：</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;"><em style="font-style: italic; color: #5a6577;">body ↔ tool ↔ object.</em></p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">视觉主要优化：</p>
+<blockquote style="margin: 24px 0; padding: 18px 22px; background: #f4f6fc; border-left: 3px solid #2e5bff; color: #3a4463; font-size: 14.5px; border-radius: 0 10px 10px 0; line-height: 1.85; letter-spacing: 0.3px;">geometric accuracy。</blockquote>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">Body Intelligence 主要优化：</p>
+<blockquote style="margin: 24px 0; padding: 18px 22px; background: #f4f6fc; border-left: 3px solid #2e5bff; color: #3a4463; font-size: 14.5px; border-radius: 0 10px 10px 0; line-height: 1.85; letter-spacing: 0.3px;">dynamic performance + physical stability。</blockquote>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">一个知道：</p>
+<blockquote style="margin: 24px 0; padding: 18px 22px; background: #f4f6fc; border-left: 3px solid #2e5bff; color: #3a4463; font-size: 14.5px; border-radius: 0 10px 10px 0; line-height: 1.85; letter-spacing: 0.3px;">去哪里。</blockquote>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">另一个知道：</p>
+<blockquote style="margin: 24px 0; padding: 18px 22px; background: #f4f6fc; border-left: 3px solid #2e5bff; color: #3a4463; font-size: 14.5px; border-radius: 0 10px 10px 0; line-height: 1.85; letter-spacing: 0.3px;">怎样用正确的力，按照正确的速度和加速度，稳定地做到。</blockquote>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">所以我真正不相信的，并不是 VLM。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">也不是 World Model。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">我不相信的是：</p>
+<blockquote style="margin: 24px 0; padding: 18px 22px; background: #f4f6fc; border-left: 3px solid #2e5bff; color: #3a4463; font-size: 14.5px; border-radius: 0 10px 10px 0; line-height: 1.85; letter-spacing: 0.3px;"><strong style="color: #0b1530; font-weight: 800; background: linear-gradient(180deg, transparent 62%, #fff18a 62%, #fff18a 95%, transparent 95%); padding: 1px 6px;">只要模型对世界理解得越来越好，它最终就应该接管所有 sensing、所有 dynamics、所有 force、所有 joint control。</strong></blockquote>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">我更相信：</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">不同功能应该由不同 intelligence 完成。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">它们可以互相 communication。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">可以互相 condition。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">可以互相修正。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">但没有必要变成一个统一模型。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">这也是我理解的：</p>
+<p style="text-align: center; color: #c7d2fe; letter-spacing: 14px; font-size: 11px; margin: 36px 0; user-select: none;">● ● ●</p>
+<h2 style="font-size: 18px; font-weight: 700; color: #0b1530; margin: 40px 0 18px; padding: 10px 16px 10px 14px; border-left: 4px solid #2e5bff; background: linear-gradient(90deg, #eef2ff 0%, #ffffff 70%); border-radius: 0 6px 6px 0; line-height: 1.5; letter-spacing: 0.3px;">Society of Agents</h2>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">它不是简单的 modular software。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">而是多个各自拥有 sensing、objective、state 和 control ability 的 autonomous intelligence 共同完成一个任务。</p>
+<p style="text-align:center;margin:16px 0;"><img src="images/16.jpg" alt="" style="max-width: 100%; height: auto; border-radius: 8px; margin: 22px auto; display: block; box-shadow: 0 6px 20px rgba(11,21,48,0.08); border: 1px solid #eef2ff;"/></p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">对于镊子这个最简单的例子：</p>
+<p style="text-align:center;margin:16px 0;"><img src="images/17.png" alt="" style="max-width: 100%; height: auto; margin: 20px auto; display: block; border: none; box-shadow: none;"/></p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">而：</p>
+<p style="text-align:center;margin:16px 0;"><img src="images/18.png" alt="" style="max-width: 100%; height: auto; margin: 20px auto; display: block; border: none; box-shadow: none;"/></p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">它们之间只需要交换很少的信息：</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">目标位置。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">运动方向。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">期望速度。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">到达时间。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">开合命令。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">而不需要共享全部 internal state。</p>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">最简单的一句话仍然是：</p>
+<blockquote style="margin: 24px 0; padding: 18px 22px; background: #f4f6fc; border-left: 3px solid #2e5bff; color: #3a4463; font-size: 14.5px; border-radius: 0 10px 10px 0; line-height: 1.85; letter-spacing: 0.3px;"><strong style="color: #0b1530; font-weight: 800; background: linear-gradient(180deg, transparent 62%, #fff18a 62%, #fff18a 95%, transparent 95%); padding: 1px 6px;">视觉不用力，手也不用眼睛。</strong></blockquote>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">如果再准确一点：</p>
+<blockquote style="margin: 24px 0; padding: 18px 22px; background: #f4f6fc; border-left: 3px solid #2e5bff; color: #3a4463; font-size: 14.5px; border-radius: 0 10px 10px 0; line-height: 1.85; letter-spacing: 0.3px;"><strong style="color: #0b1530; font-weight: 800; background: linear-gradient(180deg, transparent 62%, #fff18a 62%, #fff18a 95%, transparent 95%); padding: 1px 6px;">视觉负责目标，手负责动力学。</strong></blockquote>
+<p style="margin: 16px 0; text-indent: 0; text-align: justify; color: #242832; line-height: 1.85;">而我认为，理解 intelligence 的核心，也许正是理解这种<strong style="color: #0b1530; font-weight: 800; background: linear-gradient(180deg, transparent 62%, #fff18a 62%, #fff18a 95%, transparent 95%); padding: 1px 6px;">功能上的分工</strong>。</p>
+</section>
+    </main>
+    <footer class="foot">
+      作者：Dr OtherMind · 公众号「刷屏AI」<br>
+      正文排版由 wechat-publisher 输出（refined-blue 主题）；公式由 KaTeX 渲染为图片。
+    </footer>
+  </div>
+</body>
+</html>
